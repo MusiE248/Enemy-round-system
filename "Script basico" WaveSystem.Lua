@@ -75,8 +75,7 @@ local function startWave()
 
 	print("Enemigos generados: " .. totalEnemies)
 end
-runCountdown(timeBetweenWaves) -- Antes de la primera ola
-
+runCountdown(timeBetweenWaves)
 while true do
 	startWave()
 
