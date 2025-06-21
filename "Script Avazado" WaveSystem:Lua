@@ -1,0 +1,142 @@
+-- WaveSystem Script--------------------------------------------------
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local enemyFolder = ReplicatedStorage:WaitForChild("Enemy_Models")
+local spawnFolder = Workspace:WaitForChild("SpawnPoints_Enemies")
+local activeFolder = Workspace:WaitForChild("Data_Model")
+local waveEvent = ReplicatedStorage:WaitForChild("Wave_Update")
+local countdownEvent = ReplicatedStorage:WaitForChild("Countdown_Update")
+
+-- CONFIGURACIÓN GENERAL
+local timeBetweenWaves = 5 -- Cambia a 30 si quieres para gameplay final--
+local waveNumber = 0
+
+-- SISTEMA DE ENEMIGOS POR REGLAS ( Cuidado al mover esto o ajustar algo ) 
+local enemyRules = {
+	{
+		name = "Zombie_Common",
+		shouldSpawn = function(wave)
+			return wave >= 1 -- siempre disponibles
+		end
+	},
+	{
+		name = "Mutant_Exploder",
+		shouldSpawn = function(wave)
+			return wave >= 3 and wave % 3 == 0
+		end
+	},
+	{
+		name = "Boss_Titan",
+		shouldSpawn = function(wave)
+			return wave % 5 == 0 -- solo en olas 20, 40, 60, etc.
+		end
+	},
+	{
+		name = "Invisible_Shadow",
+		shouldSpawn = function(wave)
+			return wave >= 10 -- siempre disponibles
+		end
+	},
+}
+
+local function getValidEnemies(wave)
+	local valid = {}
+	for _, rule in ipairs(enemyRules) do
+		if rule.shouldSpawn(wave) then
+			table.insert(valid, rule.name)
+		end
+	end
+	return valid
+end
+
+-- Calcular cantidad total de enemigos por ola--
+local function calculateEnemyCount(wave)
+	local base = 10 + ((wave - 1) * 2)
+	local extraPerPlayer = 5 + (wave - 1)
+	local playerCount = #Players:GetPlayers()
+	return base + (playerCount * extraPerPlayer)
+end
+
+local function getRandomSpawn()
+	local spawnPoints = spawnFolder:GetChildren()
+	return spawnPoints[math.random(1, #spawnPoints)]
+end
+
+local function allEnemiesDead()
+	for _, enemy in pairs(activeFolder:GetChildren()) do
+		if enemy:FindFirstChild("Humanoid") and enemy.Humanoid.Health > 0 then
+			return false
+		end
+	end
+	return true
+end
+
+local function clearEnemies()
+	for _, enemy in pairs(activeFolder:GetChildren()) do
+		enemy:Destroy()
+	end
+end
+
+local function runCountdown(seconds)
+	for i = seconds, 0, -1 do
+		countdownEvent:FireAllClients(i)
+		task.wait(1)
+	end
+end
+
+local function startWave()
+	waveNumber += 1
+	print("Iniciando ola " .. waveNumber)
+
+	waveEvent:FireAllClients(waveNumber)
+	clearEnemies()
+
+	local enemyTypes = getValidEnemies(waveNumber)
+	if #enemyTypes == 0 then
+		warn("⚠No hay enemigos válidos para la ola " .. waveNumber)
+		return
+	end
+
+	local totalEnemies = calculateEnemyCount(waveNumber)
+
+	for i = 1, totalEnemies do
+		local selectedName = enemyTypes[math.random(1, #enemyTypes)]
+		local template = enemyFolder:FindFirstChild(selectedName)
+
+		if template then
+			local clone = template:Clone()
+			local spawnPoint = getRandomSpawn()
+			clone:SetPrimaryPartCFrame(spawnPoint.CFrame + Vector3.new(0, 3, 0))
+
+			if clone:FindFirstChild("Humanoid") then
+				local baseHealth = 100
+				local extraHealth = (waveNumber - 1) * 25
+				clone.Humanoid.MaxHealth = baseHealth + extraHealth
+				clone.Humanoid.Health = clone.Humanoid.MaxHealth
+			end
+
+			clone.Parent = activeFolder
+		else
+			warn("No se encontró el modelo de enemigo: " .. selectedName)
+		end
+
+		task.wait(0.2)
+	end
+
+	print("Enemigos generados: " .. totalEnemies)
+end
+
+runCountdown(timeBetweenWaves)
+
+while true do
+	startWave()
+
+	repeat
+		task.wait(1)
+	until allEnemiesDead()
+
+	print("Ola " .. waveNumber .. " completada.")
+	runCountdown(timeBetweenWaves)
+end
